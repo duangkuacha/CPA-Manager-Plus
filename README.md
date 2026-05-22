@@ -24,7 +24,7 @@ Since v6.10.0, CPA no longer includes built-in usage statistics. This project no
 - A Dockerized Manager Server for SQLite-backed usage persistence and built-in panel hosting
 - Native `amd64` and `arm64` packages for Windows, macOS, and Linux with the panel embedded
 - Two deployment modes:
-  - **Full Docker mode**: open the built-in panel from Manager Server; first setup saves the CPA connection, later logins only need the Management Key
+  - **Full Docker mode**: open the built-in panel from Manager Server; first startup logs an admin key, first setup uses that admin key to save the CPA connection, and later logins use the admin key to manage the whole panel
   - **CPA panel mode**: keep using CPA's `/management.html`, then configure a separately deployed Manager Server inside the panel
 - Runtime monitoring, account/model/channel breakdowns, model pricing, estimated token cost, imports/exports, auth-file operations, quota views, logs, config editing, and system utilities
 
@@ -32,8 +32,8 @@ Since v6.10.0, CPA no longer includes built-in usage statistics. This project no
 
 | Mode | Entry URL | What the user configures | Best for |
 |---|---|---|---|
-| Full Docker mode | `http://<host>:18317/management.html` | First setup: CPA URL + Management Key; later login: Management Key only | New deployments, one entry point, least browser/CORS complexity |
-| CPA panel mode | `http://<cpa-host>:8317/management.html` | Log in to CPA first, then set the Manager Server URL under **Configuration -> CPA Manager Plus Configuration** | Existing CPA automatic panel loading |
+| Full Docker mode | `http://<host>:18317/management.html` | First startup log provides the admin key; first setup: admin key + CPA URL + CPA Management Key; later login: admin key | New deployments, one entry point, least browser/CORS complexity |
+| CPA panel mode | `http://<cpa-host>:8317/management.html` | Log in to CPA with the CPA Management Key first, then set the Manager Server URL under **Configuration -> CPA Manager Plus Configuration** | Existing CPA automatic panel loading |
 | Frontend only | Vite dev server or `apps/web/dist/index.html` | CPA URL, optionally Manager Server URL | Development |
 
 Full Docker mode does not bundle CPA itself. CPA still runs as the upstream service; the Docker image provides the Manager Server plus an embedded copy of this management panel.
@@ -42,14 +42,14 @@ Full Docker mode does not bundle CPA itself. CPA still runs as the upstream serv
 
 Request statistics require the CPA usage queue:
 
-- CPA Management must be enabled because the usage queue uses the same availability and Management Key as `/v0/management`.
+- CPA Management must be enabled because the usage queue uses the same availability and CPA Management Key as `/v0/management`.
 - Request monitoring requires CPA usage publishing: set `usage-statistics-enabled: true`, or submit `{ "value": true }` to `PUT /usage-statistics-enabled`. CPA Manager Plus enables this automatically when request monitoring is enabled during setup or configuration save.
-- Disabling CPAM request monitoring only stops the Usage Service collector. It does not automatically disable CPA usage publishing or clear the CPA usage queue. If CPA usage publishing remains enabled, re-enabling request monitoring within the queue retention window may collect events retained while the collector was stopped.
+- Disabling CPAM request monitoring only stops the Manager Server collector. It does not automatically disable CPA usage publishing or clear the CPA usage queue. If CPA usage publishing remains enabled, re-enabling request monitoring within the queue retention window may collect events retained while the collector was stopped.
 - CPA `v7.1.0+` is recommended for current panel capabilities. CPA `v6.10.8+` already exposes the HTTP usage queue endpoint `/v0/management/usage-queue`, which can pass through regular HTTP reverse proxies.
-- Usage Service `auto` mode tries RESP Pub/Sub (`subscribe`) first, then the HTTP usage queue, then RESP pop mode for older CPA versions. RESP transports listen on the CPA API port, usually `8317`, and cannot pass through a regular HTTP reverse proxy.
-- CPA keeps queue items in memory for `redis-usage-queue-retention-seconds`, default `60` seconds and maximum `3600` seconds. Keep Usage Service running continuously.
-- Usage Service `pollIntervalMs` must be less than or equal to the CPA queue retention window converted to milliseconds. Saves are rejected when the collector would poll too slowly and risk expired queue items.
-- Exactly one Usage Service should consume the same CPA usage queue.
+- Manager Server `auto` mode tries RESP Pub/Sub (`subscribe`) first, then the HTTP usage queue, then RESP pop mode for older CPA versions. RESP transports listen on the CPA API port, usually `8317`, and cannot pass through a regular HTTP reverse proxy.
+- CPA keeps queue items in memory for `redis-usage-queue-retention-seconds`, default `60` seconds and maximum `3600` seconds. Keep Manager Server running continuously.
+- Manager Server `pollIntervalMs` must be less than or equal to the CPA queue retention window converted to milliseconds. Saves are rejected when the collector would poll too slowly and risk expired queue items.
+- Exactly one Manager Server should consume the same CPA usage queue.
 
 ## Architecture
 
@@ -57,7 +57,7 @@ Request statistics require the CPA usage queue:
 
 ```text
 Browser
-  -> Usage Service :18317
+  -> Manager Server :18317
       -> built-in management.html
       -> /v0/management/usage and /v0/management/model-prices from SQLite
       -> other /v0/management/* proxied to CPA
@@ -65,9 +65,9 @@ Browser
       -> SQLite /data/usage.sqlite
 ```
 
-The login page calls `GET /usage-service/info` and detects that it is hosted by Usage Service. If the response is not configured yet, it shows the setup wizard: you enter the CPA URL, Management Key, and choose whether to enable request monitoring. When monitoring is enabled, you also set the collector polling interval; Usage Service validates the CPA Management API, enables CPA usage publishing, checks that the poll interval does not exceed the CPA queue retention window, stores CPA Manager Plus configuration in SQLite, starts the collector with the configured mode (`auto` by default: RESP Pub/Sub, then HTTP queue, then RESP pop fallback), and serves the panel from the same origin. When monitoring is disabled, the CPA connection is still saved for Management API proxying, but CPA usage publishing and the collector stay off.
+On first startup, if `CPA_MANAGER_ADMIN_KEY` / `CPA_MANAGER_ADMIN_KEY_FILE` is not provided, Manager Server generates a `cmp_admin_...` admin key and prints it to the startup log only once. The login page calls `GET /usage-service/info` and detects that it is hosted by Manager Server. If the response is not configured yet, it shows the setup wizard: you first enter the admin key, then the CPA URL, CPA Management Key, and choose whether to enable request monitoring. When monitoring is enabled, you also set the collector polling interval; Manager Server validates the CPA Management API, enables CPA usage publishing, checks that the poll interval does not exceed the CPA queue retention window, stores CPA Manager Plus configuration in SQLite, starts the collector with the configured mode (`auto` by default: RESP Pub/Sub, then HTTP queue, then RESP pop fallback), and serves the panel from the same origin. When monitoring is disabled, the CPA connection is still saved for Management API proxying, but CPA usage publishing and the collector stay off.
 
-After Usage Service is configured, a new browser opening the same URL uses the normal login form. The user only enters the Management Key; the panel uses the CPA connection saved on the server.
+After Manager Server is configured, a new browser opening the same URL uses the normal login form. Full Docker mode uses the admin key as the login credential; the CPA Management Key is stored server-side and is only used by Manager Server when it talks to CPA upstream.
 
 ### CPA Panel Mode
 
@@ -75,14 +75,14 @@ After Usage Service is configured, a new browser opening the same URL uses the n
 Browser
   -> CPA /management.html
       -> normal CPA Management API calls stay on CPA
-      -> usage calls go to configured Usage Service URL
+      -> usage calls go to configured Manager Server URL
 
-Usage Service
+Manager Server
   -> HTTP/RESP/PubSub consumer -> CPA API port
   -> SQLite /data/usage.sqlite
 ```
 
-Use this when CPA still auto-downloads and serves the panel. This mode is served by CPA, so it does not show the Usage Service-hosted setup wizard. Request monitoring is optional; when Usage Service is not deployed, the panel hides the request monitoring entry and direct visits to the monitoring page show a setup hint. To use request monitoring, log in to CPA first, deploy Usage Service separately, then open **Configuration -> CPA Manager Plus Configuration**, enable it, enter the Usage Service URL, and save.
+Use this when CPA still auto-downloads and serves the panel. This mode is served by CPA, so it does not show the full Docker setup wizard and does not require the user to enter the Manager Server admin key inside the CPA panel. Request monitoring is optional; when Manager Server is not deployed, the panel hides the request monitoring entry and direct visits to the monitoring page show a setup hint. To use request monitoring, log in to CPA with the CPA Management Key first, deploy Manager Server separately, then open **Configuration -> CPA Manager Plus Configuration**, enable it, enter the Manager Server URL, and save. This is a subtractive version of full Docker mode: no hosted primary entry point, no initialization page, and no takeover of regular CPA management APIs.
 
 ### Manager Server Backend
 
@@ -120,13 +120,14 @@ http://<host>:18317/management.html
 
 On first setup, enter:
 
+- Admin key: `CPA Manager Plus admin key generated: cmp_admin_...` from the first startup log
 - CPA URL:
   - Docker Desktop host CPA: `http://host.docker.internal:8317` (default suggestion unless the panel was built with `VITE_DEFAULT_CPA_BASE_URL`)
   - Same compose network: `http://cli-proxy-api:8317`
   - Remote CPA: `https://your-cpa.example.com`
-- Management Key
+- CPA Management Key
 
-After setup, the same entry URL uses the saved CPA connection from Usage Service SQLite. New browsers only need the Management Key on the login page.
+You can read the generated admin key with `docker logs cpa-manager-plus`. After setup, the same entry URL uses the saved CPA connection from Manager Server SQLite. New browsers only need the admin key on the login page.
 
 The published image supports `linux/amd64` and `linux/arm64`. If your image is published under another Docker Hub namespace, replace `seakee/cpa-manager-plus:latest`.
 
@@ -167,7 +168,7 @@ Then open:
 http://<host>:18317/management.html
 ```
 
-Native packages do not include CPA itself. Run CPA separately, then enter the CPA URL and Management Key during first setup. After setup, the login page only needs the Management Key. Set `USAGE_DATA_DIR` or `USAGE_DB_PATH` only when you want to override the default data location.
+Native packages do not include CPA itself. Run CPA separately, then enter the admin key, CPA URL, and CPA Management Key during first setup. After setup, the login page only needs the admin key. Set `USAGE_DATA_DIR` or `USAGE_DB_PATH` only when you want to override the default data location.
 
 On first start, if `USAGE_DATA_DIR` and `USAGE_DB_PATH` are not set, the native package creates `config.json` next to the binary and writes SQLite data to `data/usage.sqlite` in the same directory. The extracted package directory therefore contains both the program and its user data.
 
@@ -195,7 +196,7 @@ docker compose up -d
 
 ### Linux Host CPA
 
-If CPA runs directly on a Linux host and Usage Service runs in Docker, add a host gateway:
+If CPA runs directly on a Linux host and Manager Server runs in Docker, add a host gateway:
 
 ```bash
 docker run -d \
@@ -217,9 +218,9 @@ Then enter `http://host.docker.internal:8317` as the CPA URL during first setup.
    http://<cpa-host>:8317/management.html
    ```
 
-   Log in to CPA with the CPA Management Key. This entry is served by CPA and does not use the Usage Service setup wizard.
+   Log in to CPA with the CPA Management Key. This entry is served by CPA and does not use the full Docker setup wizard.
 
-2. Deploy Usage Service:
+2. Deploy Manager Server:
 
    ```bash
    docker run -d \
@@ -244,7 +245,7 @@ Then enter `http://host.docker.internal:8317` as the CPA URL during first setup.
 
 5. Save the CPA Manager Plus configuration.
 
-The panel sends the current CPA URL and Management Key to the Manager Server. After that, monitoring reads usage data from the Manager Server while other management calls continue to use CPA.
+The panel sends the current CPA URL and CPA Management Key to the Manager Server. After that, monitoring reads usage data from the Manager Server while other management calls continue to use CPA. In this external mode, Manager Server endpoints accept the CPA Management Key for compatibility; full Docker mode still uses the admin key.
 
 ## Build Locally
 
@@ -254,21 +255,26 @@ docker compose -f docker-compose.manager.yml up --build
 
 This builds the React panel and embeds it into the Go Manager Server binary.
 
-## Usage Service Configuration
+## Manager Server Configuration
 
-Most users can configure CPA URL, Management Key, request monitoring enablement, collection mode, and polling interval from **Configuration -> CPA Manager Plus Configuration**. CPA Manager Plus configuration is persisted in SQLite. Environment variables are mainly for first bootstrap and unattended deployments.
+Most users can configure CPA URL, CPA Management Key, request monitoring enablement, collection mode, and polling interval from **Configuration -> CPA Manager Plus Configuration**. CPA Manager Plus configuration is persisted in SQLite. Environment variables are mainly for first bootstrap and unattended deployments.
 
-The variables below are Usage Service runtime settings. Frontend build-time settings are separate: `VITE_DEFAULT_CPA_BASE_URL` sets the default CPA URL shown by the Usage Service-hosted first setup wizard. When it is not set, the Docker-hosted panel suggests `http://host.docker.internal:8317`.
+The variables below are Manager Server runtime settings. Frontend build-time settings are separate: `VITE_DEFAULT_CPA_BASE_URL` sets the default CPA URL shown by the Manager Server-hosted first setup wizard. When it is not set, the Docker-hosted panel suggests `http://host.docker.internal:8317`.
 
 | Variable | Default | Description |
 |---|---:|---|
 | `CPA_MANAGER_CONFIG` | empty | Optional config file path. When empty, native packages use `config.json` next to the binary |
-| `HTTP_ADDR` | `0.0.0.0:18317` | Usage Service HTTP listen address |
+| `HTTP_ADDR` | `0.0.0.0:18317` | Manager Server HTTP listen address |
 | `USAGE_DB_PATH` | Docker: `/data/usage.sqlite`; native: `./data/usage.sqlite` | SQLite database path |
 | `USAGE_DATA_DIR` | Docker: `/data`; native: `./data` | Base data directory when `USAGE_DB_PATH` is not overridden |
+| `CPA_MANAGER_ADMIN_KEY` | empty | Optional admin key; when empty, first startup generates and logs one |
+| `CPA_MANAGER_ADMIN_KEY_FILE` | `/run/secrets/cpa_admin_key` | Optional admin key file |
+| `CPA_MANAGER_DATA_KEY` | empty | Optional data encryption key; when empty, read or generate it through `CPA_MANAGER_DATA_KEY_PATH` |
+| `CPA_MANAGER_DATA_KEY_FILE` | `/run/secrets/cpa_data_key` | Optional data encryption key file |
+| `CPA_MANAGER_DATA_KEY_PATH` | Docker: `/data/data.key`; native: `./data/data.key` | Auto-generated data encryption key file path |
 | `CPA_UPSTREAM_URL` | empty | Optional CPA base URL for unattended startup |
 | `CPA_MANAGEMENT_KEY` | empty | Optional CPA Management Key for unattended startup |
-| `CPA_MANAGEMENT_KEY_FILE` | `/run/secrets/cpa_management_key` | Optional file containing the Management Key |
+| `CPA_MANAGEMENT_KEY_FILE` | `/run/secrets/cpa_management_key` | Optional file containing the CPA Management Key |
 | `USAGE_COLLECTOR_MODE` | `auto` | Collection mode: `auto` tries RESP Pub/Sub, then HTTP usage queue, then RESP pop fallback; `subscribe` forces RESP Pub/Sub; `http` forces HTTP; `resp` forces RESP pop |
 | `USAGE_RESP_QUEUE` | `usage` | RESP key argument; CPA currently ignores it, leave the default unless upstream changes |
 | `USAGE_RESP_POP_SIDE` | `right` | `right` uses `RPOP`; `left` uses `LPOP` |
@@ -288,31 +294,35 @@ Startup configuration precedence is: environment variables > `config.json` > pro
 }
 ```
 
-If `CPA_UPSTREAM_URL` and `CPA_MANAGEMENT_KEY` are set, collection starts automatically on boot and the connection is shown as environment-managed in the panel. Otherwise, use the web panel setup flow; the result is saved to SQLite `settings.manager_config_v1`. The legacy `settings.setup` value is still written for compatibility and rollback.
+If `CPA_MANAGER_ADMIN_KEY` is set, the service initializes the admin credential from that value and does not log a generated admin key. If `CPA_UPSTREAM_URL` and `CPA_MANAGEMENT_KEY` are set, collection starts automatically on boot and the connection is shown as environment-managed in the panel. Otherwise, use the full Docker setup flow; the result is saved to SQLite `settings.manager_config_v1`. The legacy `settings.setup` value is still written for compatibility and rollback.
 
 ### CPA vs CPA Manager Plus Configuration Boundary
 
 - **CPA configuration**: `usage-statistics-enabled`, `redis-usage-queue-retention-seconds`, proxy, logging, routing, auth files, and related fields still belong to CPA and are managed by `/config` / `/config.yaml`.
-- **CPA Manager Plus configuration**: CPA URL, Management Key, request monitoring enablement, Usage Service collection mode, `pollIntervalMs`, `batchSize`, `queryLimit`, and the CPA panel mode Usage Service bootstrap URL are persisted in Usage Service SQLite.
+- **CPA Manager Plus configuration**: CPA URL, CPA Management Key, request monitoring enablement, Manager Server collection mode, `pollIntervalMs`, `batchSize`, `queryLimit`, and the CPA panel mode Manager Server bootstrap URL are persisted in Manager Server SQLite.
 - The configuration panel shows CPA and CPA Manager Plus settings separately. Saving CPAM settings does not write to CPA `config.yaml`; enabling request monitoring calls CPA Management API to enable usage publishing, while disabling request monitoring only stops the CPAM collector.
 
 ### Migration Guide
 
-1. Back up the Usage Service data directory, especially `/data/usage.sqlite`.
-2. After upgrading, open **Configuration -> CPA Manager Plus Configuration** and verify the CPA URL, request monitoring switch, collection mode, and polling interval. Older stored configs without the switch are treated as monitoring enabled.
-3. If an older version already saved CPA URL and Management Key through `/setup`, the service can read `settings.setup` as a fallback and writes the new `settings.manager_config_v1` structure on the next save.
-4. If you use `CPA_UPSTREAM_URL` / `CPA_MANAGEMENT_KEY`, the connection remains environment-managed. To switch to panel persistence, remove those environment variables, restart, and save from the panel.
-5. In CPA panel mode, the browser still needs the Usage Service URL before it can read that service's SQLite configuration. Once entered, the value is saved to SQLite and kept in local storage as bootstrap data.
+1. Back up the Manager Server data directory used by the old `/Users/seakee/WorkSpace/Node/CPA-Manager` project, especially `/data/usage.sqlite`. If it is a Docker volume, stop the old container first and back up the whole volume.
+2. Start CPA Manager Plus with the same `/data` volume. The new version keeps the old tables compatible and adds `settings.admin_credential_v1`, `settings.bootstrap_state_v1`, and `/data/data.key`.
+3. After upgrading, open **Configuration -> CPA Manager Plus Configuration** and verify the CPA URL, request monitoring switch, collection mode, and polling interval. Older stored configs without the switch are treated as monitoring enabled.
+4. If an older version already saved CPA URL and CPA Management Key through `/setup`, the service migrates from `settings.setup` to `settings.manager_config_v1` and rewrites the old plaintext CPA Management Key as encrypted storage during startup migration.
+5. If you use `CPA_UPSTREAM_URL` / `CPA_MANAGEMENT_KEY`, the connection remains environment-managed. To switch to panel persistence, remove those environment variables, restart, and save from the panel.
+6. In CPA panel mode, the browser still needs the Manager Server URL before it can read that service's SQLite configuration. Once entered, the value is saved to SQLite and kept in local storage as bootstrap data.
 
 ## Data and Security Notes
 
 - SQLite data is stored under `/data`; mount it to persistent storage.
-- In full Docker mode, CPA URL and Management Key are stored in the SQLite `settings` table so collection can resume after restart.
+- The admin key is not stored in plaintext. SQLite `settings.admin_credential_v1` stores only the salt and HMAC-SHA256 digest. An automatically generated admin key is printed to the first startup log once; use `CPA_MANAGER_ADMIN_KEY_FILE` with Docker Secret or an external secret manager for managed deployments.
+- CPA Management Key is encrypted with the data key before it is stored in SQLite `settings`, so collection and CPA Management API proxying can resume after restart.
+- The data key is provided by `CPA_MANAGER_DATA_KEY` / `CPA_MANAGER_DATA_KEY_FILE`, or generated at `CPA_MANAGER_DATA_KEY_PATH`; Docker defaults to `/data/data.key` with `0600` permissions.
+- Data key security assessment: AES-GCM prevents a leaked SQLite file alone from directly exposing the CPA Management Key. If an attacker gets both `/data/usage.sqlite` and `/data/data.key`, the CPA Management Key can still be decrypted. If the data key is lost, encrypted CPA Management Key values cannot be recovered and the CPA connection must be initialized or saved again.
 - New versions prefer SQLite `settings.manager_config_v1`; legacy `settings.setup` is kept as compatibility data.
-- Protect the `/data` volume. It contains usage metadata and the saved Management Key.
-- Usage Service redacts key-like fields before storing raw JSON payload snapshots, but request metadata may still expose requested/resolved models, endpoints, account labels, project snapshots, and token usage.
-- RESP pop queue consumption is destructive. RESP Pub/Sub is streaming. Do not run multiple Usage Service consumers against the same CPA instance.
-- If Usage Service is down longer than CPA's queue retention window, that period's usage cannot be recovered without CPA-side persistence.
+- Protect the `/data` volume. It contains usage metadata, admin credential digest, the data key file, and the encrypted CPA Management Key.
+- Manager Server redacts key-like fields before storing raw JSON payload snapshots, but request metadata may still expose requested/resolved models, endpoints, account labels, project snapshots, and token usage.
+- RESP pop queue consumption is destructive. RESP Pub/Sub is streaming. Do not run multiple Manager Server consumers against the same CPA instance.
+- If Manager Server is down longer than CPA's queue retention window, that period's usage cannot be recovered without CPA-side persistence.
 - If only the CPAM collector is stopped while CPA usage publishing remains enabled, restarting the collector within the retention window may consume queue items produced while collection was disabled.
 
 ## Runtime Endpoints
@@ -324,7 +334,7 @@ If `CPA_UPSTREAM_URL` and `CPA_MANAGEMENT_KEY` are set, collection starts automa
 | `GET /usage-service/info` | Allows the frontend to detect full Docker mode and read `configured` for setup vs login flow |
 | `GET /usage-service/config` | Reads persistent CPA Manager Plus configuration and CPA usage publishing status |
 | `PUT /usage-service/config` | Saves CPA Manager Plus configuration and restarts the collector when needed |
-| `POST /setup` | Save CPA URL + Management Key and start collection |
+| `POST /setup` | Protected by the admin key; saves CPA URL + CPA Management Key and starts collection |
 | `GET /v0/management/usage` | Compatible usage payload for the panel |
 | `GET /v0/management/usage/export` | Export usage events as JSONL |
 | `POST /v0/management/usage/import` | Import JSONL usage events or legacy JSON snapshots |
@@ -334,9 +344,9 @@ If `CPA_UPSTREAM_URL` and `CPA_MANAGEMENT_KEY` are set, collection starts automa
 | `GET /models`, `GET /v1/models` | Proxy model-list requests to CPA after setup |
 | `/v0/management/*` | Proxied to CPA except usage endpoints |
 
-After setup, `/status`, usage, model-pricing, and `/v0/management/*` proxy endpoints require the same Management Key as a Bearer token.
+After full Docker setup, `/status`, usage, model-pricing, and `/v0/management/*` proxy endpoints require the admin key as a Bearer token. In external CPA panel mode, these Manager Server endpoints also accept the CPA Management Key so the CPA panel mode does not need a second Manager Server login.
 
-Usage import accepts two file families: JSONL/NDJSON event files exported by Usage Service, and legacy JSON snapshots produced by older CPA `/usage/export`. Legacy JSON can be converted only when `usage.apis.*.models.*.details[]` request details are present. Files that contain only aggregate totals are rejected because request-level monitoring data cannot be reconstructed. Legacy import is a migration/recovery path, not a perfect continuation of newly collected Usage Service data: old files may miss metadata such as `api_key_hash`, channel, request ID, method/path, latency, cache tokens, or failure reason, so account matching, API Key level analysis, and detail accuracy may be lower. Importing legacy files affects totals, trend charts, and account/key breakdowns; use a test or backup database first when accuracy matters.
+Usage import accepts two file families: JSONL/NDJSON event files exported by Manager Server, and legacy JSON snapshots produced by older CPA `/usage/export`. Legacy JSON can be converted only when `usage.apis.*.models.*.details[]` request details are present. Files that contain only aggregate totals are rejected because request-level monitoring data cannot be reconstructed. Legacy import is a migration/recovery path, not a perfect continuation of newly collected Manager Server data: old files may miss metadata such as `api_key_hash`, channel, request ID, method/path, latency, cache tokens, or failure reason, so account matching, API Key level analysis, and detail accuracy may be lower. Importing legacy files affects totals, trend charts, and account/key breakdowns; use a test or backup database first when accuracy matters.
 
 ## Feature Overview
 
@@ -387,12 +397,12 @@ go run ./cmd/cpa-manager-plus
 
 ## Troubleshooting
 
-- **Cannot connect in full Docker mode**: verify the CPA URL from inside the Usage Service container. For host CPA on Linux, use `--add-host=host.docker.internal:host-gateway`.
-- **Full Docker mode opens the login form instead of setup**: Usage Service is already configured. Enter the saved Management Key; the CPA URL comes from the server-side configuration.
+- **Cannot connect in full Docker mode**: verify the CPA URL from inside the Manager Server container. For host CPA on Linux, use `--add-host=host.docker.internal:host-gateway`.
+- **Full Docker mode opens the login form instead of setup**: Manager Server is already configured. Enter the admin key; the CPA URL comes from the server-side configuration.
 - **Wrong default CPA URL in first setup**: rebuild the panel with `VITE_DEFAULT_CPA_BASE_URL=<your-cpa-url>` or enter the correct CPA URL manually.
-- **Monitoring is empty**: enable CPA usage publishing, verify Usage Service `/status`, and confirm only one consumer is running.
+- **Monitoring is empty**: enable CPA usage publishing, verify Manager Server `/status`, and confirm only one consumer is running.
 - **`unsupported RESP prefix 'H'`**: upgrade CPA to `v6.10.8+` or keep `USAGE_COLLECTOR_MODE=http` for reverse-proxied HTTP queue access. RESP Pub/Sub/RESP pop modes require the CPA URL to be a container/host direct address for port `8317`, not a regular HTTP reverse-proxy domain.
-- **401 from Usage Service**: use the same Management Key that was saved during setup.
+- **401 from Manager Server**: full Docker mode uses the admin key; external CPA panel mode uses the CPA Management Key.
 - **Docker panel shows stale data**: check `/status` for `lastConsumedAt`, `lastInsertedAt`, and `lastError`.
 - **CPA panel mode has CORS errors**: set `USAGE_CORS_ORIGINS` to the CPA panel origin or keep the default `*` for private deployments.
 - **Data disappears after container rebuild**: mount `/data` to a Docker volume or host directory.
