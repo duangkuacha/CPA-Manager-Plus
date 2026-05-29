@@ -102,6 +102,7 @@ func Migrate(db *sql.DB) error {
 			delete_count integer not null default 0,
 			disable_count integer not null default 0,
 			enable_count integer not null default 0,
+			reauth_count integer not null default 0,
 			keep_count integer not null default 0,
 			error text,
 			settings_json text not null,
@@ -153,7 +154,55 @@ func Migrate(db *sql.DB) error {
 	if err := ensureUsageEventSnapshotColumns(db); err != nil {
 		return err
 	}
+	if err := ensureCodexInspectionRunColumns(db); err != nil {
+		return err
+	}
 	return ensureModelPriceColumns(db)
+}
+
+func ensureCodexInspectionRunColumns(db *sql.DB) error {
+	rows, err := db.Query(`pragma table_info(codex_inspection_runs)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	existing := map[string]struct{}{}
+	for rows.Next() {
+		var cid int
+		var name string
+		var columnType string
+		var notNull int
+		var defaultValue any
+		var pk int
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &pk); err != nil {
+			return err
+		}
+		existing[name] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	columns := []struct {
+		name       string
+		definition string
+	}{
+		{name: "reauth_count", definition: "integer not null default 0"},
+	}
+	for _, column := range columns {
+		if _, ok := existing[column.name]; ok {
+			continue
+		}
+		if _, err := db.Exec(fmt.Sprintf(
+			`alter table codex_inspection_runs add column %s %s`,
+			column.name,
+			column.definition,
+		)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func ensureUsageEventSnapshotColumns(db *sql.DB) error {

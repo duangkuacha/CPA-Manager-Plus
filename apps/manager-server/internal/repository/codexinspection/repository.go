@@ -50,9 +50,9 @@ func (r *repository) CreateRun(ctx context.Context, run model.CodexInspectionRun
 		`insert into codex_inspection_runs (
 			trigger_type, trigger_key, status, started_at_ms, finished_at_ms,
 			total_files, probe_set_count, sampled_count, disabled_count, enabled_count,
-			delete_count, disable_count, enable_count, keep_count, error,
+			delete_count, disable_count, enable_count, reauth_count, keep_count, error,
 			settings_json, created_at_ms, updated_at_ms
-		) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		run.TriggerType,
 		nullString(run.TriggerKey),
 		run.Status,
@@ -66,6 +66,7 @@ func (r *repository) CreateRun(ctx context.Context, run model.CodexInspectionRun
 		run.DeleteCount,
 		run.DisableCount,
 		run.EnableCount,
+		run.ReauthCount,
 		run.KeepCount,
 		nullString(run.Error),
 		run.SettingsJSON,
@@ -104,6 +105,7 @@ func (r *repository) UpdateRun(ctx context.Context, run model.CodexInspectionRun
 			delete_count = ?,
 			disable_count = ?,
 			enable_count = ?,
+			reauth_count = ?,
 			keep_count = ?,
 			error = ?,
 			settings_json = ?,
@@ -119,6 +121,7 @@ func (r *repository) UpdateRun(ctx context.Context, run model.CodexInspectionRun
 		run.DeleteCount,
 		run.DisableCount,
 		run.EnableCount,
+		run.ReauthCount,
 		run.KeepCount,
 		nullString(run.Error),
 		run.SettingsJSON,
@@ -225,7 +228,7 @@ func (r *repository) ListRuns(ctx context.Context, limit int) ([]model.CodexInsp
 		`select
 			id, trigger_type, trigger_key, status, started_at_ms, finished_at_ms,
 			total_files, probe_set_count, sampled_count, disabled_count, enabled_count,
-			delete_count, disable_count, enable_count, keep_count, error,
+			delete_count, disable_count, enable_count, reauth_count, keep_count, error,
 			settings_json, created_at_ms, updated_at_ms
 		from codex_inspection_runs
 		order by started_at_ms desc, id desc
@@ -254,7 +257,7 @@ func (r *repository) GetRun(ctx context.Context, id int64) (model.CodexInspectio
 		`select
 			id, trigger_type, trigger_key, status, started_at_ms, finished_at_ms,
 			total_files, probe_set_count, sampled_count, disabled_count, enabled_count,
-			delete_count, disable_count, enable_count, keep_count, error,
+			delete_count, disable_count, enable_count, reauth_count, keep_count, error,
 			settings_json, created_at_ms, updated_at_ms
 		from codex_inspection_runs
 		where id = ?`,
@@ -276,7 +279,7 @@ func (r *repository) GetLatestRunByTrigger(ctx context.Context, triggerType, tri
 		`select
 			id, trigger_type, trigger_key, status, started_at_ms, finished_at_ms,
 			total_files, probe_set_count, sampled_count, disabled_count, enabled_count,
-			delete_count, disable_count, enable_count, keep_count, error,
+			delete_count, disable_count, enable_count, reauth_count, keep_count, error,
 			settings_json, created_at_ms, updated_at_ms
 		from codex_inspection_runs
 		where trigger_type = ? and trigger_key = ?
@@ -371,6 +374,7 @@ func scanRun(row scanner) (model.CodexInspectionRun, error) {
 		&run.DeleteCount,
 		&run.DisableCount,
 		&run.EnableCount,
+		&run.ReauthCount,
 		&run.KeepCount,
 		&errorText,
 		&run.SettingsJSON,

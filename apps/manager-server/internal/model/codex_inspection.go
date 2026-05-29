@@ -14,6 +14,7 @@ const (
 	CodexInspectionScheduleModeTimePoints = "time_points"
 
 	CodexInspectionAutoActionNone    = "none"
+	CodexInspectionAutoActionEnable  = "enable"
 	CodexInspectionAutoActionDisable = "disable"
 	CodexInspectionAutoActionDelete  = "delete"
 
@@ -47,26 +48,27 @@ type ManagerCodexInspectionScheduleConfig struct {
 }
 
 type CodexInspectionRun struct {
-	ID                   int64                         `json:"id"`
-	TriggerType          string                        `json:"triggerType"`
-	TriggerKey           string                        `json:"triggerKey,omitempty"`
-	Status               string                        `json:"status"`
-	StartedAtMS          int64                         `json:"startedAtMs"`
-	FinishedAtMS         int64                         `json:"finishedAtMs,omitempty"`
-	TotalFiles           int                           `json:"totalFiles"`
-	ProbeSetCount        int                           `json:"probeSetCount"`
-	SampledCount         int                           `json:"sampledCount"`
-	DisabledCount        int                           `json:"disabledCount"`
-	EnabledCount         int                           `json:"enabledCount"`
-	DeleteCount          int                           `json:"deleteCount"`
-	DisableCount         int                           `json:"disableCount"`
-	EnableCount          int                           `json:"enableCount"`
-	KeepCount            int                           `json:"keepCount"`
-	Error                string                        `json:"error,omitempty"`
-	Settings             ManagerCodexInspectionConfig `json:"settings"`
-	SettingsJSON         string                        `json:"-"`
-	CreatedAtMS          int64                         `json:"createdAtMs"`
-	UpdatedAtMS          int64                         `json:"updatedAtMs"`
+	ID            int64                        `json:"id"`
+	TriggerType   string                       `json:"triggerType"`
+	TriggerKey    string                       `json:"triggerKey,omitempty"`
+	Status        string                       `json:"status"`
+	StartedAtMS   int64                        `json:"startedAtMs"`
+	FinishedAtMS  int64                        `json:"finishedAtMs,omitempty"`
+	TotalFiles    int                          `json:"totalFiles"`
+	ProbeSetCount int                          `json:"probeSetCount"`
+	SampledCount  int                          `json:"sampledCount"`
+	DisabledCount int                          `json:"disabledCount"`
+	EnabledCount  int                          `json:"enabledCount"`
+	DeleteCount   int                          `json:"deleteCount"`
+	DisableCount  int                          `json:"disableCount"`
+	EnableCount   int                          `json:"enableCount"`
+	ReauthCount   int                          `json:"reauthCount"`
+	KeepCount     int                          `json:"keepCount"`
+	Error         string                       `json:"error,omitempty"`
+	Settings      ManagerCodexInspectionConfig `json:"settings"`
+	SettingsJSON  string                       `json:"-"`
+	CreatedAtMS   int64                        `json:"createdAtMs"`
+	UpdatedAtMS   int64                        `json:"updatedAtMs"`
 }
 
 type CodexInspectionResult struct {
@@ -269,6 +271,8 @@ func NormalizeCodexInspectionTimePoint(value string) (string, bool) {
 
 func NormalizeCodexInspectionAutoActionMode(value string, fallback string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
+	case CodexInspectionAutoActionEnable:
+		return CodexInspectionAutoActionEnable
 	case CodexInspectionAutoActionDisable:
 		return CodexInspectionAutoActionDisable
 	case CodexInspectionAutoActionDelete:
@@ -276,7 +280,9 @@ func NormalizeCodexInspectionAutoActionMode(value string, fallback string) strin
 	case CodexInspectionAutoActionNone:
 		return CodexInspectionAutoActionNone
 	default:
-		if fallback == CodexInspectionAutoActionDisable || fallback == CodexInspectionAutoActionDelete {
+		if fallback == CodexInspectionAutoActionEnable ||
+			fallback == CodexInspectionAutoActionDisable ||
+			fallback == CodexInspectionAutoActionDelete {
 			return fallback
 		}
 		return CodexInspectionAutoActionNone
