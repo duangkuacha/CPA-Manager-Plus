@@ -103,6 +103,33 @@ func TestAnalyticsBuildsIncludedSections(t *testing.T) {
 	}
 }
 
+func TestCacheHitRateMatchesWebClient(t *testing.T) {
+	// Anthropic-style: InputTokens excludes cache, so denominator = input + cacheRead + cacheCreation.
+	anthropic := cacheHitRate(TimelinePoint{
+		InputTokens:         100,
+		CacheReadTokens:     300,
+		CacheCreationTokens: 50,
+	})
+	if math.Abs(anthropic-300.0/450.0) > 1e-9 {
+		t.Fatalf("anthropic cache hit rate = %v, want %v", anthropic, 300.0/450.0)
+	}
+	// OpenAI-style: InputTokens already includes cache; cacheRead falls back to cachedTokens.
+	openai := cacheHitRate(TimelinePoint{
+		InputTokens:  1000,
+		CachedTokens: 400,
+	})
+	if math.Abs(openai-0.4) > 1e-9 {
+		t.Fatalf("openai cache hit rate = %v, want 0.4", openai)
+	}
+	// No input -> 0; malformed cached > input clamps to 1.
+	if r := cacheHitRate(TimelinePoint{}); r != 0 {
+		t.Fatalf("empty cache hit rate = %v, want 0", r)
+	}
+	if r := cacheHitRate(TimelinePoint{InputTokens: 10, CachedTokens: 1000}); r != 1 {
+		t.Fatalf("clamped cache hit rate = %v, want 1", r)
+	}
+}
+
 func TestAnalyticsExposesCPA7118UsageFields(t *testing.T) {
 	db := newMonitoringTestStore(t)
 	ctx := context.Background()

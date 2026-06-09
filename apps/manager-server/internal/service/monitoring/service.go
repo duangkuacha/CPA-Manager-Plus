@@ -1803,11 +1803,23 @@ func averageTokensPerRequest(point TimelinePoint) float64 {
 }
 
 func cacheHitRate(point TimelinePoint) float64 {
-	cacheTotal := point.CacheReadTokens + point.CacheCreationTokens + point.CachedTokens
-	if cacheTotal <= 0 {
+	// Mirror computeCacheHitRate on the web client: cache-read tokens over total
+	// input. cacheRead falls back to cachedTokens for OpenAI-style usage (input
+	// already includes cache); totalInput adds cacheRead/cacheCreation back for
+	// Anthropic-style usage where InputTokens excludes them.
+	cacheRead := point.CacheReadTokens
+	if cacheRead == 0 {
+		cacheRead = point.CachedTokens
+	}
+	totalInput := point.InputTokens + point.CacheReadTokens + point.CacheCreationTokens
+	if totalInput <= 0 {
 		return 0
 	}
-	return float64(point.CacheReadTokens+point.CachedTokens) / float64(cacheTotal)
+	rate := float64(cacheRead) / float64(totalInput)
+	if rate > 1 {
+		return 1
+	}
+	return rate
 }
 
 func floatValueOrZero(value *float64) float64 {
