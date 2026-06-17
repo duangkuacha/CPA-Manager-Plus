@@ -655,6 +655,26 @@
   cursor: crosshair;
 }
 
+.heatmapChartFrame {
+  position: relative;
+  min-width: 0;
+}
+
+.heatmapLegendLabels {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  display: flex;
+  justify-content: space-between;
+  width: 148px;
+  transform: translateX(-50%);
+  color: var(--usage-muted);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+}
+
 .chartEmptyInline {
   display: grid;
   min-height: 180px;
@@ -1058,6 +1078,14 @@
   min-width: 0;
 }
 
+.credentialAnalysisGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(360px, 0.85fr);
+  gap: 14px;
+  align-items: start;
+  min-width: 0;
+}
+
 .overviewHeroGrid,
 .dualChartGrid {
   display: grid;
@@ -1359,8 +1387,45 @@
   grid-column: 1 / -1;
 }
 
+.credentialDetailPanel {
+  grid-column: auto;
+  align-self: start;
+}
+
 .fullWidthPanel {
   grid-column: 1 / -1;
+}
+
+.credentialIdentityGrid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+
+  div {
+    display: grid;
+    gap: 5px;
+    min-width: 0;
+    padding: 10px 12px;
+    border: 1px solid var(--usage-border);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--usage-muted-surface) 70%, var(--usage-surface));
+  }
+
+  span {
+    color: var(--usage-muted);
+    font-size: 11px;
+    font-weight: 800;
+  }
+
+  strong {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--usage-text);
+    font-size: 12px;
+    font-weight: 800;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
 .detailMetrics {
@@ -1728,7 +1793,7 @@
   .segmentButton {
     min-height: 32px;
     padding: 0 12px;
-    color: var(--usage-text);
+    color: color-mix(in srgb, var(--usage-muted) 84%, var(--usage-text));
     font-size: 12px;
   }
 
@@ -2399,9 +2464,9 @@
 }
 
 .heatmapHighlightMain {
-    display: grid;
-    gap: 3px;
-    min-width: 0;
+  display: grid;
+  gap: 3px;
+  min-width: 0;
 
   strong,
   em {
@@ -2516,6 +2581,10 @@
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
+  .credentialIdentityGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .filterGrid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -2553,6 +2622,7 @@
   }
 
   .analysisGrid,
+  .credentialAnalysisGrid,
   .heatmapDetailBody,
   .overviewHeroGrid,
   .dualChartGrid,
@@ -2641,6 +2711,7 @@
   .advancedGrid,
   .advancedPanel,
   .detailMetrics,
+  .credentialIdentityGrid,
   .heatmapDetailMetrics {
     grid-template-columns: 1fr;
   }

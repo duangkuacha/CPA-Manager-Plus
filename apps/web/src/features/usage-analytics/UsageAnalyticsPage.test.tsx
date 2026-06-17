@@ -377,8 +377,6 @@ const createUsageState = (overrides: Record<string, unknown> = {}) => {
         refreshedAtMs: point.bucketMs,
       },
     ],
-    activeCredentialsOnly: true,
-    setActiveCredentialsOnly: vi.fn(),
     insights: [
       {
         id: 'cache-room',
@@ -714,6 +712,53 @@ describe('UsageAnalyticsPage', () => {
     expect(text).not.toContain('usage_analytics.insight_credential_success_drop');
     // Only one model row, so the show-all toggle stays hidden.
     expect(text).not.toContain('usage_analytics.rank_show_all');
+  });
+
+  it('renders the credentials tab as a capped ranking with selected credential trend only', () => {
+    const credentialRows = Array.from({ length: 11 }, (_, index) =>
+      createRankRow({
+        id: `credential-${index + 1}`,
+        label: `credential-${index + 1}`,
+        model: undefined,
+        provider: 'openai',
+        authFile: 'auth.json',
+        projectId: `project-${index + 1}`,
+        sourceHash: `source-${index + 1}`,
+      })
+    );
+
+    mocks.usageState = createUsageState({
+      activeTab: 'credentials',
+      credentialRows,
+      allCredentialRows: credentialRows,
+      selectedCredential: credentialRows[0],
+      insights: [
+        {
+          id: 'credential-health',
+          tone: 'danger',
+          titleKey: 'usage_analytics.insight_credential_success_drop',
+          bodyKey: 'usage_analytics.insight_credential_success_drop_body',
+          actionTab: 'credentials',
+        },
+      ],
+    });
+    const renderer = renderPage();
+    const text = getText(renderer.root);
+    const credentialRankRows = renderer.root.findAllByType('tbody')[0].findAllByType('tr');
+
+    expect(text).toContain('usage_analytics.credential_rank_title');
+    expect(credentialRankRows).toHaveLength(10);
+    expect(getText(credentialRankRows[9])).toContain('credential-10');
+    expect(text).toContain('usage_analytics.selected_credential_trend_title');
+    expect(text).not.toContain('usage_analytics.entity_trend_title');
+    expect(text).not.toContain('usage_analytics.insights_title');
+    expect(text).not.toContain('usage_analytics.insight_credential_success_drop');
+    expect(text).not.toContain('usage_analytics.rank_show_all');
+    expect(text).not.toContain('usage_analytics.active_only');
+    expect(text).toContain('usage_analytics.credential_identity_project_id');
+    expect(text).toContain('project-1');
+    expect(text).toContain('usage_analytics.credential_last_seen');
+    expect(text).not.toContain('usage_analytics.credential_identity_source_hash');
   });
 
   it('renders the heatmap tab as a focused time-window workspace', () => {

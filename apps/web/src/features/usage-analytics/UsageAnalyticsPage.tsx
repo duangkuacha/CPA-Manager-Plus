@@ -97,6 +97,7 @@ import {
   buildUsageHeatmapSummaryCards,
   buildUsageOverviewSummaryCards,
   buildUsageTrendSummaryCards,
+  buildCredentialDetailCards,
   formatUsageDurationMs,
 } from './usageAnalyticsPresentation';
 import styles from './UsageAnalyticsPage.module.scss';
@@ -1681,6 +1682,8 @@ function UsageHeatmapChart({
   const data = buildUsageHeatmapChartData(points, metric, scaleMode);
   const maxVisualValue = Math.max(0, ...data.map((point) => point[2]));
   const maxValue = maxVisualValue > 0 ? maxVisualValue : 1;
+  const minLegendLabel = formatHeatmapVisualValue(metric, scaleMode, 0);
+  const maxLegendLabel = formatHeatmapVisualValue(metric, scaleMode, maxValue);
   const chartData = data.map((point) => {
     const selected = selectedCell?.hour === point[0] && selectedCell.weekday === point[1];
     return selected
@@ -1698,7 +1701,7 @@ function UsageHeatmapChart({
   const option: HeatmapChartOption = {
     animationDuration: 260,
     backgroundColor: 'transparent',
-    grid: { bottom: 74, containLabel: true, left: 8, right: 14, top: 10 },
+    grid: { bottom: 78, containLabel: true, left: 8, right: 14, top: 10 },
     tooltip: {
       appendToBody: true,
       ...getTooltipOption(chartTheme),
@@ -1751,11 +1754,13 @@ function UsageHeatmapChart({
       padding: 0,
     },
     visualMap: {
-      bottom: 4,
+      bottom: 28,
       calculable: true,
       dimension: 2,
-      formatter: (value: unknown) => formatHeatmapVisualValue(metric, scaleMode, Number(value)),
+      formatter: () => '',
       inRange: { color: chartTheme.heatmapColors },
+      itemHeight: 148,
+      itemWidth: 16,
       left: 'center',
       max: maxValue,
       min: 0,
@@ -1815,13 +1820,19 @@ function UsageHeatmapChart({
   }
 
   return (
-    <EChartsView
-      option={option}
-      className={styles.echartsCanvas}
-      style={{ height: 380 }}
-      ariaLabel={t('usage_analytics.heatmap_title')}
-      onClick={(event) => onSelect(getHeatmapEventSelection(event))}
-    />
+    <div className={styles.heatmapChartFrame}>
+      <EChartsView
+        option={option}
+        className={styles.echartsCanvas}
+        style={{ height: 380 }}
+        ariaLabel={t('usage_analytics.heatmap_title')}
+        onClick={(event) => onSelect(getHeatmapEventSelection(event))}
+      />
+      <div className={styles.heatmapLegendLabels} aria-hidden="true">
+        <span>{minLegendLabel}</span>
+        <span>{maxLegendLabel}</span>
+      </div>
+    </div>
   );
 }
 
@@ -2104,12 +2115,7 @@ function HeatmapDetailPanel({
             </div>
             <div className={styles.heatmapComparisonList}>
               {comparisons.map((item) => {
-                const direction =
-                  item.delta > 0
-                    ? 'above'
-                    : item.delta < 0
-                      ? 'below'
-                      : 'even';
+                const direction = item.delta > 0 ? 'above' : item.delta < 0 ? 'below' : 'even';
                 const difference = detail.metricValue - item.average;
                 const directionClass =
                   direction === 'even'
@@ -2794,6 +2800,8 @@ function UsageAnalyticsPageInner() {
     useState<UsageMetricKey[]>(DEFAULT_SELECTED_METRICS);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [showAllModels, setShowAllModels] = useState(false);
+  const [credentialWarningsForSelectionOnly, setCredentialWarningsForSelectionOnly] =
+    useState(false);
   const [customStartInput, setCustomStartInput] = useState(() =>
     formatDateTimeLocalValue(
       new Date(usage.filters.customRange?.startMs ?? Date.now() - 24 * 60 * 60 * 1000)
@@ -2938,15 +2946,12 @@ function UsageAnalyticsPageInner() {
   }));
   const noData = !usage.loading && !usage.error && !hasUsageData(usage.summary, usage.timeline);
   const rankRowLimit = 8;
+  const credentialRankRowLimit = 10;
   const visibleModelRows = showAllModels ? usage.modelRows : usage.modelRows.slice(0, rankRowLimit);
   const visibleApiKeyRows = usage.apiKeyRows.slice(0, 8);
-  const visibleCredentialRows = usage.credentialRows.slice(0, 8);
+  const visibleCredentialRows = usage.credentialRows.slice(0, credentialRankRowLimit);
   const modelInsights = useMemo(
     () => usage.insights.filter((insight) => insight.actionTab === 'models'),
-    [usage.insights]
-  );
-  const credentialInsights = useMemo(
-    () => usage.insights.filter((insight) => insight.actionTab === 'credentials'),
     [usage.insights]
   );
   const selectedModelKeyDistribution = useMemo(
@@ -2957,6 +2962,28 @@ function UsageAnalyticsPageInner() {
     [usage.apiKeyRows, usage.selectedModel]
   );
   const abnormalCredentialCount = usage.credentialAnomalies.length;
+  const visibleCredentialAnomalies = useMemo(
+    () =>
+      credentialWarningsForSelectionOnly && usage.selectedCredential
+        ? usage.credentialAnomalies.filter((row) => row.id === usage.selectedCredential?.id)
+        : usage.credentialAnomalies,
+    [credentialWarningsForSelectionOnly, usage.credentialAnomalies, usage.selectedCredential]
+  );
+  const highRiskCredentialCount = useMemo(
+    () => usage.credentialAnomalies.filter((row) => row.severity === 'high').length,
+    [usage.credentialAnomalies]
+  );
+  const lowestSuccessCredential = useMemo(
+    () =>
+      usage.credentialRows.reduce<UsageRankRow | null>(
+        (current, row) =>
+          row.requestCount > 0 && (!current || row.successRate < current.successRate)
+            ? row
+            : current,
+        null
+      ),
+    [usage.credentialRows]
+  );
   const anomalyUrl = usage.anomalyAnalysis
     ? buildMonitoringDetailUrl(usage.anomalyAnalysis.point, usage.filters)
     : '';
@@ -3696,7 +3723,7 @@ function UsageAnalyticsPageInner() {
       {usage.activeTab === 'credentials' ? (
         <>
           <UsageSummarySection cards={credentialSummaryCards} />
-          <section className={styles.analysisGrid}>
+          <section className={styles.credentialAnalysisGrid}>
             <div className={styles.tablePanel}>
               <div className={styles.panelHeader}>
                 <div>
@@ -3708,14 +3735,6 @@ function UsageAnalyticsPageInner() {
                     })}
                   </p>
                 </div>
-                <label className={styles.toggleControl}>
-                  <input
-                    type="checkbox"
-                    checked={usage.activeCredentialsOnly}
-                    onChange={(event) => usage.setActiveCredentialsOnly(event.target.checked)}
-                  />
-                  <span>{t('usage_analytics.active_only')}</span>
-                </label>
               </div>
               <RankTable
                 rows={visibleCredentialRows}
@@ -3724,8 +3743,33 @@ function UsageAnalyticsPageInner() {
                 onSelect={(row) => usage.setSelectedCredentialId(row.id)}
               />
             </div>
+            <div className={styles.panel}>
+              <div className={`${styles.panelHeader} ${styles.trendEntityHeader}`}>
+                <h2>{t('usage_analytics.selected_credential_trend_title')}</h2>
+                <div
+                  className={`${styles.segmentedControl} ${styles.trendMetricTabs}`}
+                  aria-label={t('usage_analytics.filter_metric')}
+                >
+                  {trendMetricOptions.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={`${styles.segmentButton} ${
+                        usage.trendMetric === option.value ? styles.segmentButtonActive : ''
+                      }`}
+                      onClick={() => usage.setTrendMetric(option.value)}
+                      aria-pressed={usage.trendMetric === option.value}
+                    >
+                      {t(option.labelKey)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <EntityTrendChart series={usage.credentialTrendSeries} metric={usage.trendMetric} />
+            </div>
             {usage.selectedCredential ? (
               <DetailPanel
+                className={`${styles.credentialDetailPanel} ${styles.fullWidthPanel}`}
                 row={usage.selectedCredential}
                 type="credential"
                 action={
@@ -3748,12 +3792,34 @@ function UsageAnalyticsPageInner() {
                 }
               />
             ) : null}
-            <div className={styles.warningPanel}>
+            <div className={`${styles.warningPanel} ${styles.fullWidthPanel}`}>
               <div className={styles.panelHeader}>
-                <h2>{t('usage_analytics.credential_warning_title')}</h2>
+                <div>
+                  <h2>{t('usage_analytics.credential_warning_title')}</h2>
+                  <p>
+                    {t('usage_analytics.credential_warning_summary', {
+                      count: abnormalCredentialCount,
+                      high: highRiskCredentialCount,
+                      lowest: lowestSuccessCredential
+                        ? formatPercent(lowestSuccessCredential.successRate)
+                        : '-',
+                    })}
+                  </p>
+                </div>
+                <label className={styles.toggleControl}>
+                  <input
+                    type="checkbox"
+                    checked={credentialWarningsForSelectionOnly}
+                    onChange={(event) =>
+                      setCredentialWarningsForSelectionOnly(event.target.checked)
+                    }
+                    disabled={!usage.selectedCredential}
+                  />
+                  <span>{t('usage_analytics.credential_warning_selected_only')}</span>
+                </label>
               </div>
               <KeyAnomalyTable
-                rows={usage.credentialAnomalies}
+                rows={visibleCredentialAnomalies}
                 locale={i18n.language}
                 type="credential"
                 onOpen={(row) =>
@@ -3765,31 +3831,6 @@ function UsageAnalyticsPageInner() {
                 }
               />
             </div>
-            <div className={styles.panel}>
-              <div className={styles.panelHeader}>
-                <div>
-                  <h2>{t('usage_analytics.entity_trend_title')}</h2>
-                  <p>{t('usage_analytics.entity_trend_hint')}</p>
-                </div>
-                <Select
-                  value={usage.trendMetric}
-                  options={trendMetricSelectOptions}
-                  onChange={(value) => usage.setTrendMetric(value as UsageTrendMetricKey)}
-                  ariaLabel={t('usage_analytics.filter_metric')}
-                  triggerClassName={styles.compactSelectTrigger}
-                />
-              </div>
-              <EntityTrendChart
-                series={usage.credentialTrendSeries}
-                metric={usage.trendMetric}
-                highlightId={usage.selectedCredential?.id}
-              />
-            </div>
-            <InsightsPanel
-              insights={credentialInsights}
-              onOpen={usage.setActiveTab}
-              className={styles.fullWidthPanel}
-            />
           </section>
         </>
       ) : null}
@@ -4148,17 +4189,19 @@ function RankTable({
 }
 
 function DetailPanel({
+  className = '',
   row,
   type,
   action,
   keyDistribution,
 }: {
+  className?: string;
   row: UsageRankRow;
   type: 'model' | 'apiKey' | 'credential';
   action?: ReactNode;
   keyDistribution?: UsageModelKeyDistributionRow[];
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const title =
     type === 'model'
       ? t('usage_analytics.model_detail_title', { model: row.label })
@@ -4166,7 +4209,7 @@ function DetailPanel({
         ? t('usage_analytics.api_key_detail_title', { key: row.label })
         : t('usage_analytics.credential_detail_title', { credential: row.label });
   return (
-    <div className={styles.detailPanel}>
+    <div className={`${styles.detailPanel} ${className}`}>
       <div className={styles.panelHeader}>
         <h2>{title}</h2>
         {action}
@@ -4208,51 +4251,23 @@ function DetailPanel({
           </div>
         </div>
       ) : (
-        <div className={styles.detailMetrics}>
-          {[
-            ['requestCount', row.requestCount],
-            ['totalTokens', row.totalTokens],
-            ['inputTokens', row.inputTokens],
-            ['outputTokens', row.outputTokens],
-            ['estimatedCost', row.estimatedCost],
-          ].map(([key, value]) => (
-            <div key={String(key)}>
-              <span>{getMetricLabel(key as UsageMetricKey, t)}</span>
-              <strong>{formatMetricValue(key as UsageMetricKey, Number(value))}</strong>
-            </div>
-          ))}
-          <div>
-            <span>{t('usage_analytics.average_tokens_per_request')}</span>
-            <strong>
-              {compactNumber(row.requestCount > 0 ? row.totalTokens / row.requestCount : 0)}
-            </strong>
+        <>
+          <div className={styles.credentialIdentityGrid}>
+            {[
+              ['credential_identity_provider', row.provider],
+              ['credential_identity_account', row.account],
+              ['credential_identity_auth_file', row.authFile],
+              ['credential_identity_auth_index', row.authIndex],
+              ['credential_identity_project_id', row.projectId],
+            ].map(([key, value]) => (
+              <div key={key}>
+                <span>{t(`usage_analytics.${key}`)}</span>
+                <strong title={String(value || '-')}>{value || '-'}</strong>
+              </div>
+            ))}
           </div>
-          <div>
-            <span>{t('usage_analytics.average_cost')}</span>
-            <strong>
-              {formatMetricValue(
-                'estimatedCost',
-                row.requestCount > 0 ? row.estimatedCost / row.requestCount : 0
-              )}
-            </strong>
-          </div>
-          <div>
-            <span>{t('usage_analytics.cache_read_rate')}</span>
-            <strong>{formatPercent(computeRowCacheHitRate(row))}</strong>
-          </div>
-          <div>
-            <span>{t('usage_analytics.success_rate')}</span>
-            <strong
-              className={
-                row.requestCount > 0 && row.successRate < USAGE_SUCCESS_RATE_WATCH_THRESHOLD
-                  ? styles.tonebad
-                  : ''
-              }
-            >
-              {formatPercent(row.successRate)}
-            </strong>
-          </div>
-        </div>
+          <UsageSummarySection cards={buildCredentialDetailCards({ locale: i18n.language, row, t })} />
+        </>
       )}
       {type === 'model' && keyDistribution && keyDistribution.length > 0 ? (
         <div className={styles.modelDistribution}>
