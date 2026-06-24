@@ -17,7 +17,13 @@ import type {
 import type { CredentialInfo } from '@/types/sourceInfo';
 import { buildSourceInfoMap, resolveSourceDisplay } from '@/utils/sourceResolver';
 import { normalizeAuthIndex, type UsageDetailWithEndpoint } from '@/utils/usage';
-import { formatApiKeyHashLabel, joinUnique, maskAuthIndex, maskEmailLike, readString } from './base';
+import {
+  formatApiKeyHashLabel,
+  joinUnique,
+  maskAuthIndex,
+  maskEmailLike,
+  readString,
+} from './base';
 import { sanitizeApiKeyDisplayText, type ApiKeyDisplayInfo } from './apiKeys';
 import { buildDayLabel, buildHourLabel, buildLocalDayKey, padNumber } from './range';
 import { buildMonitoringSourceDisplay } from './sourceDisplay';
@@ -282,6 +288,18 @@ export const buildAnalyticsFilters = (
   }
   if (isActiveFilterValue(scopeFilters.cacheStatus)) {
     filters.cache_status = scopeFilters.cacheStatus!.trim();
+  }
+  if (isActiveFilterValue(scopeFilters.headerErrorKind)) {
+    filters.header_error_kinds = [scopeFilters.headerErrorKind!.trim()];
+  }
+  if (isActiveFilterValue(scopeFilters.headerErrorCode)) {
+    filters.header_error_codes = [scopeFilters.headerErrorCode!.trim()];
+  }
+  if (isActiveFilterValue(scopeFilters.headerQuotaPlan)) {
+    filters.header_quota_plans = [scopeFilters.headerQuotaPlan!.trim()];
+  }
+  if (isActiveFilterValue(scopeFilters.headerTraceId)) {
+    filters.header_trace_ids = [scopeFilters.headerTraceId!.trim()];
   }
 
   let authIndices: Set<string> | null = null;
@@ -700,6 +718,10 @@ export const buildFilterOptionsFromAnalytics = (
       providers: [],
       models: [],
       channels: [],
+      headerErrorKinds: [],
+      headerErrorCodes: [],
+      headerQuotaPlans: [],
+      headerTraceIds: [],
     };
   }
 
@@ -740,6 +762,10 @@ export const buildFilterOptionsFromAnalytics = (
         );
       })
     ),
+    headerErrorKinds: uniqueReadableValues(options.header_error_kinds || []),
+    headerErrorCodes: uniqueReadableValues(options.header_error_codes || []),
+    headerQuotaPlans: uniqueReadableValues(options.header_quota_plans || []),
+    headerTraceIds: uniqueReadableValues(options.header_trace_ids || []),
   };
 };
 
@@ -871,6 +897,13 @@ export const buildUsageDetailsFromAnalyticsEvents = (
     failed: item.failed === true,
     fail_status_code: item.fail_status_code ?? null,
     fail_summary: readString(item.fail_summary),
+    response_metadata: item.response_metadata,
+    header_quota_recover_at_ms: item.header_quota_recover_at_ms ?? null,
+    header_quota_used_percent: item.header_quota_used_percent ?? null,
+    header_quota_plan_type: readString(item.header_quota_plan_type),
+    header_error_kind: readString(item.header_error_kind),
+    header_error_code: readString(item.header_error_code),
+    header_trace_id: readString(item.header_trace_id),
     __modelName: item.model,
     __resolvedModel: readString(item.resolved_model),
     __endpoint: item.endpoint || `${item.method} ${item.path}`.trim(),

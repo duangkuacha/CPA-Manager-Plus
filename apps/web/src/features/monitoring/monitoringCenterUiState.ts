@@ -28,6 +28,10 @@ export type MonitoringCenterUiState = {
   selectedModel: string;
   selectedChannel: string;
   selectedApiKeyHash: string;
+  selectedHeaderErrorKind: string;
+  selectedHeaderErrorCode: string;
+  selectedHeaderQuotaPlan: string;
+  selectedHeaderTraceId: string;
   selectedStatus: MonitoringCenterStatusFilter;
   apiKeyPageSize: number;
   realtimePageSize: number;
@@ -98,6 +102,10 @@ export const getDefaultMonitoringCenterUiState = (): MonitoringCenterUiState => 
   selectedModel: 'all',
   selectedChannel: 'all',
   selectedApiKeyHash: 'all',
+  selectedHeaderErrorKind: 'all',
+  selectedHeaderErrorCode: 'all',
+  selectedHeaderQuotaPlan: 'all',
+  selectedHeaderTraceId: 'all',
   selectedStatus: 'all',
   apiKeyPageSize: DEFAULT_MONITORING_TABLE_PAGE_SIZE,
   realtimePageSize: DEFAULT_MONITORING_REALTIME_PAGE_SIZE,
@@ -122,6 +130,10 @@ export const normalizeMonitoringCenterUiState = (value: unknown): MonitoringCent
     selectedModel: normalizeSelectValue(record.selectedModel),
     selectedChannel: normalizeSelectValue(record.selectedChannel),
     selectedApiKeyHash: normalizeSelectValue(record.selectedApiKeyHash),
+    selectedHeaderErrorKind: normalizeSelectValue(record.selectedHeaderErrorKind),
+    selectedHeaderErrorCode: normalizeSelectValue(record.selectedHeaderErrorCode),
+    selectedHeaderQuotaPlan: normalizeSelectValue(record.selectedHeaderQuotaPlan),
+    selectedHeaderTraceId: normalizeSelectValue(record.selectedHeaderTraceId),
     selectedStatus: normalizeMonitoringStatusFilter(record.selectedStatus),
     apiKeyPageSize: normalizePageSize(
       record.apiKeyPageSize,

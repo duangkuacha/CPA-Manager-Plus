@@ -240,6 +240,10 @@ describe('accountOverviewState', () => {
       selectedAccount: 'all',
       selectedApiKeyHash: 'all',
       selectedChannel: 'all',
+      selectedHeaderErrorCode: 'all',
+      selectedHeaderErrorKind: 'all',
+      selectedHeaderQuotaPlan: 'all',
+      selectedHeaderTraceId: 'all',
       selectedModel: 'all',
       selectedProvider: 'all',
       selectedStatus: 'all',
@@ -262,6 +266,10 @@ describe('accountOverviewState', () => {
       selectedAccount: 'all',
       selectedApiKeyHash: 'all',
       selectedChannel: 'all',
+      selectedHeaderErrorCode: 'all',
+      selectedHeaderErrorKind: 'all',
+      selectedHeaderQuotaPlan: 'all',
+      selectedHeaderTraceId: 'all',
       selectedModel: 'all',
       selectedProvider: 'all',
       selectedStatus: 'all',
@@ -284,6 +292,12 @@ describe('accountOverviewState', () => {
       shouldResetAccountOverviewPage(previous, {
         ...previous,
         selectedStatus: 'failed',
+      })
+    ).toBe(true);
+    expect(
+      shouldResetAccountOverviewPage(previous, {
+        ...previous,
+        selectedHeaderErrorCode: 'rate_limit',
       })
     ).toBe(true);
   });
